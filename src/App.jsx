@@ -1,20 +1,21 @@
-import { useState } from 'react'
-import reactLogo from './assets/react.svg'
-import viteLogo from '/vite.svg'
-import './App.css'
-import Login  from './components/login'
+import { useState } from 'react';
+import './App.css';
+import Login from './components/Login';
+import Dashboard from './components/Dashboard'; // Adjust path if needed
 
 function App() {
-  const [count, setCount] = useState(0)
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
 
   return (
     <>
-      <div><Login /></div>
-      {/* <Routes>
-        <Route path='login' element={<login/>}></Route>
-      </Routes> */}
+      {/* {isAuthenticated ? (
+        <Dashboard />
+      ) : (
+        <Login onLoginSuccess={() => setIsAuthenticated(true)} />
+      )} */}
+      <Dashboard/>
     </>
-  )
+  );
 }
 
-export default App
+export default App;

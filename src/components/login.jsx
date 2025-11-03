@@ -3,7 +3,7 @@ import { Button } from '../components/ui/button';
 import { useState } from "react";
 import { Eye, EyeOff, Lock, Mail } from "lucide-react";
 
-const Login = () => {
+const Login = ({ onLoginSuccess }) => {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -16,6 +16,10 @@ const Login = () => {
     setTimeout(() => {
       console.log("Login successful:", { email, password });
       setIsLoading(false);
+       if (onLoginSuccess) {
+        onLoginSuccess(); // Trigger Dashboard view
+      }
+
     }, 1000);
   };
 
