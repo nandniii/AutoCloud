@@ -8,12 +8,12 @@ function App() {
 
   return (
     <>
-      {/* {isAuthenticated ? (
+      {isAuthenticated ? (
         <Dashboard />
       ) : (
         <Login onLoginSuccess={() => setIsAuthenticated(true)} />
-      )} */}
-      <Dashboard/>
+      )}
+      
     </>
   );
 }
