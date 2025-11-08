@@ -8,47 +8,55 @@ function StorageOverview() {
   const user = JSON.parse(localStorage.getItem("user"));
 
   // ✅ Extract Google Drive info safely
-  const drive = user?.drive || {};
+  const driveLimitBytes = user?.drive?.limit ? Number(user.drive.limit) : 15 * 1024 ** 3;
+  const driveUsedBytes = user?.drive?.usage ? Number(user.drive.usage) : 0;
 
-  // ✅ Convert bytes → GB and calculate usage
-  const total = drive.limit ? (Number(drive.limit) / (1024 ** 3)).toFixed(2) : 15;
-  const used = drive.usage ? (Number(drive.usage) / (1024 ** 3)).toFixed(2) : 0;
-  const free = (total - used).toFixed(2);
-  const usagePercent = total > 0 ? ((used / total) * 100).toFixed(1) : 0;
+  // ✅ Convert bytes → GB (numbers only)
+  const totalGB = driveLimitBytes / 1024 ** 3;
+  const usedGB = driveUsedBytes / 1024 ** 3;
+  const freeGB = totalGB - usedGB;
 
-  console.log("✅ Drive data loaded:", { total, used, free, usagePercent });
+  // ✅ Calculate usage percentage
+  const usagePercent = totalGB > 0 ? (usedGB / totalGB) * 100 : 0;
 
-  // ✅ Dynamic storage data (Drive real, others placeholder for now)
+  console.log("✅ Drive data loaded:", {
+    totalGB: totalGB.toFixed(2),
+    usedGB: usedGB.toFixed(2),
+    freeGB: freeGB.toFixed(2),
+    usagePercent: usagePercent.toFixed(1),
+  });
+
+  // ✅ Dynamic storage data (Drive real, others placeholders for now)
   const storageData = [
     {
       id: "drive",
       name: "Google Drive",
-      used: parseFloat(used),
-      total: parseFloat(total),
+      used: usedGB,
+      total: totalGB,
       icon: HardDrive,
       color: "bg-blue-500",
     },
     {
       id: "gmail",
       name: "Gmail",
-      used: 2.3, // static for now — Gmail usage could be fetched separately
-      total: 15,
+      used: user?.gmail?.usage ? Number(user.gmail.usage) / 1024 ** 3 : 2.3, // GB
+      total: user?.gmail?.limit ? Number(user.gmail.limit) / 1024 ** 3 : 15,
       icon: Mail,
       color: "bg-red-500",
     },
     {
       id: "photos",
-      name: "Photos",
-      used: 3.5,
-      total: 15,
+      name: "Google Photos",
+      used: user?.photos?.usage ? Number(user.photos.usage) / 1024 ** 3 : 3.5,
+      total: user?.photos?.limit ? Number(user.photos.limit) / 1024 ** 3 : 15,
       icon: Image,
       color: "bg-green-500",
     },
     {
       id: "mobile",
       name: "Mobile Backup",
-      used: 1.2,
-      total: 10,
+      used: user?.mobile?.usage ? Number(user.mobile.usage) / 1024 ** 3 : 1.2,
+      total: user?.mobile?.limit ? Number(user.mobile.limit) / 1024 ** 3 : 10,
       icon: Smartphone,
       color: "bg-purple-500",
     },
@@ -70,13 +78,13 @@ function StorageOverview() {
           <div className="space-y-2">
             <div className="flex items-center justify-between">
               <span className="text-gray-600 dark:text-gray-400">
-                {used} GB of {total} GB used
+                {totalUsed.toFixed(2)} GB of {totalStorage.toFixed(2)} GB used
               </span>
               <span className="text-gray-900 dark:text-white">
-                {usagePercent}%
+                {overallUsage.toFixed(1)}%
               </span>
             </div>
-            <Progress value={usagePercent} className="h-3" />
+            <Progress value={overallUsage} className="h-3" />
           </div>
         </CardContent>
       </Card>
@@ -112,7 +120,7 @@ function StorageOverview() {
                       {item.name}
                     </p>
                     <p className="text-sm text-gray-500 dark:text-gray-400">
-                      {item.used.toFixed(2)} GB / {item.total} GB
+                      {item.used.toFixed(2)} GB / {item.total.toFixed(2)} GB
                     </p>
                   </div>
 

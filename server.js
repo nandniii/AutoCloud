@@ -1,96 +1,59 @@
-import express from "express";
-import cors from "cors";
-import axios from "axios";
-import { OAuth2Client } from "google-auth-library";
+const express = require("express");
+const axios = require("axios");
+const cors = require("cors");
+const bodyParser = require("body-parser");
 
 const app = express();
-app.use(express.json());
+app.use(cors());
+app.use(bodyParser.json());
 
-app.use(
-  cors({
-    origin: "http://localhost:5173",
-    credentials: true,
-  })
-);
-
-// ✅ Disable COOP restriction for Google OAuth popup
-app.use((req, res, next) => {
-  res.setHeader("Cross-Origin-Opener-Policy", "unsafe-none");
-  res.setHeader("Cross-Origin-Embedder-Policy", "unsafe-none");
-  next();
-});
-
-// ✅ Google OAuth2 Client
-const client = new OAuth2Client(
-  "485611680613-rim7kuqpc9shbn51t6db7a4ig7e6a9oe.apps.googleusercontent.com"
-);
-
-// ✅ Root route test
-app.get("/", (req, res) => {
-  res.send("✅ AutoCloud backend is running with Google integration");
-});
-
-// ✅ GOOGLE LOGIN + REAL DRIVE STORAGE
+// Google login route
 app.post("/api/auth/google", async (req, res) => {
+  const { access_token } = req.body;
+
   try {
-    const { access_token } = req.body;
-    if (!access_token)
-      return res.status(400).json({ message: "Access token missing" });
-
-    // 🔹 Fetch Google profile
-    const profileRes = await axios.get(
+    // 1️⃣ Get basic user info
+    const userInfoRes = await axios.get(
       "https://www.googleapis.com/oauth2/v2/userinfo",
-      {
-        headers: { Authorization: `Bearer ${access_token}` },
-      }
+      { headers: { Authorization: `Bearer ${access_token}` } }
     );
+    const user = userInfoRes.data; // {name, email, picture}
 
-    // 🔹 Fetch Google Drive usage info
+    // 2️⃣ Get Google Drive storage info
     const driveRes = await axios.get(
       "https://www.googleapis.com/drive/v3/about?fields=storageQuota",
-      {
-        headers: { Authorization: `Bearer ${access_token}` },
-      }
+      { headers: { Authorization: `Bearer ${access_token}` } }
     );
-    console.log("🔍 Google Drive API raw:", driveRes.data);
+    const storage = driveRes.data.storageQuota;
 
-    // Extract storage data
-    const quota = driveRes.data.storageQuota || {};
-    const total = quota.limit ? quota.limit / (1024 ** 3) : 15; // in GB
-    const used = quota.usage ? quota.usage / (1024 ** 3) : 0;
-    const free = total - used;
-    const usagePercent = ((used / total) * 100).toFixed(1);
+    // 3️⃣ Approximate Gmail usage (counts toward Drive storage)
+    const gmailUsage = storage.usageInDrive ? parseInt(storage.usageInDrive) : 0;
 
-    // 🔹 Fetch Gmail info
-    const gmailRes = await axios.get(
-      "https://www.googleapis.com/gmail/v1/users/me/profile",
-      {
-        headers: { Authorization: `Bearer ${access_token}` },
-      }
-    );
-
-    // ✅ Combined user data
-    const user = {
-      name: profileRes.data.name,
-      email: profileRes.data.email,
-      picture: profileRes.data.picture,
+    // 4️⃣ Prepare final user object
+    const userData = {
+      name: user.name,
+      email: user.email,
+      picture: user.picture,
       drive: {
-        totalStorage: total.toFixed(2),
-        usedStorage: used.toFixed(2),
-        freeStorage: free.toFixed(2),
-        usagePercent,
+        limit: parseInt(storage.limit || 15 * 1024 ** 3), // fallback 15GB
+        usage: parseInt(storage.usage || 0),
       },
-      gmail: gmailRes.data,
+      gmail: {
+        limit: parseInt(storage.limit || 15 * 1024 ** 3),
+        usage: gmailUsage,
+      },
+      photos: {
+        limit: parseInt(storage.limit || 15 * 1024 ** 3),
+        usage: 0, // Google Photos API doesn't provide usage easily
+      },
     };
 
-    res.json({ user });
+    res.json({ user: userData });
   } catch (err) {
-    console.error("❌ Google API error:", err.response?.data || err.message);
-    res.status(500).json({ message: "Failed to fetch user data" });
+    console.error("Google login error:", err.response?.data || err.message);
+    res.status(500).json({ error: "Failed to fetch Google data" });
   }
 });
 
-// ✅ Start server
-app.listen(5000, () => {
-  console.log("🚀 AutoCloud Server running on http://localhost:5000");
-});
+const PORT = process.env.PORT || 5000;
+app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
