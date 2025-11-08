@@ -3,73 +3,73 @@ import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
 import { Progress } from "./ui/progress";
 import { HardDrive, Mail, Image, Smartphone } from "lucide-react";
 
-function StorageOverview() {
-  // ✅ Load user data from localStorage (set after Google login)
-  const user = JSON.parse(localStorage.getItem("user"));
+function StorageOverview({ user }) {
+  const mongoUser = user || JSON.parse(localStorage.getItem("user")) || {};
 
-  // ✅ Extract Google Drive info safely
-  const driveLimitBytes = user?.drive?.limit ? Number(user.drive.limit) : 15 * 1024 ** 3;
-  const driveUsedBytes = user?.drive?.usage ? Number(user.drive.usage) : 0;
+  // ✅ Helper: Convert bytes to GB if needed
+  const normalizeGB = (val) => {
+    if (!val) return 0;
+    // If > 1024, it's likely in bytes → convert to GB
+    return val > 1024 ? val / (1024 ** 3) : val;
+  };
 
-  // ✅ Convert bytes → GB (numbers only)
-  const totalGB = driveLimitBytes / 1024 ** 3;
-  const usedGB = driveUsedBytes / 1024 ** 3;
-  const freeGB = totalGB - usedGB;
+  // ✅ Normalize all data
+  const driveLimitGB = normalizeGB(mongoUser?.drive?.limit || 15);
+  const driveUsedGB = normalizeGB(mongoUser?.drive?.usage || 0);
 
-  // ✅ Calculate usage percentage
-  const usagePercent = totalGB > 0 ? (usedGB / totalGB) * 100 : 0;
+  const gmailLimitGB = normalizeGB(mongoUser?.gmail?.limit || 15);
+  const gmailUsedGB = normalizeGB(mongoUser?.gmail?.usage || 0);
 
-  console.log("✅ Drive data loaded:", {
-    totalGB: totalGB.toFixed(2),
-    usedGB: usedGB.toFixed(2),
-    freeGB: freeGB.toFixed(2),
-    usagePercent: usagePercent.toFixed(1),
-  });
+  const photosLimitGB = normalizeGB(mongoUser?.photos?.limit || 15);
+  const photosUsedGB = normalizeGB(mongoUser?.photos?.usage || 0);
 
-  // ✅ Dynamic storage data (Drive real, others placeholders for now)
+  const mobileLimitGB = normalizeGB(mongoUser?.mobileBackup?.limit || 10);
+  const mobileUsedGB = normalizeGB(mongoUser?.mobileBackup?.usage || 0);
+
+  const totalUsed =
+    driveUsedGB + gmailUsedGB + photosUsedGB + mobileUsedGB;
+  const totalLimit =
+    driveLimitGB + gmailLimitGB + photosLimitGB + mobileLimitGB;
+  const overallUsage = (totalUsed / totalLimit) * 100;
+
   const storageData = [
     {
       id: "drive",
       name: "Google Drive",
-      used: usedGB,
-      total: totalGB,
+      used: driveUsedGB,
+      total: driveLimitGB,
       icon: HardDrive,
       color: "bg-blue-500",
     },
     {
       id: "gmail",
       name: "Gmail",
-      used: user?.gmail?.usage ? Number(user.gmail.usage) / 1024 ** 3 : 2.3, // GB
-      total: user?.gmail?.limit ? Number(user.gmail.limit) / 1024 ** 3 : 15,
+      used: gmailUsedGB,
+      total: gmailLimitGB,
       icon: Mail,
       color: "bg-red-500",
     },
     {
       id: "photos",
       name: "Google Photos",
-      used: user?.photos?.usage ? Number(user.photos.usage) / 1024 ** 3 : 3.5,
-      total: user?.photos?.limit ? Number(user.photos.limit) / 1024 ** 3 : 15,
+      used: photosUsedGB,
+      total: photosLimitGB,
       icon: Image,
       color: "bg-green-500",
     },
     {
       id: "mobile",
       name: "Mobile Backup",
-      used: user?.mobile?.usage ? Number(user.mobile.usage) / 1024 ** 3 : 1.2,
-      total: user?.mobile?.limit ? Number(user.mobile.limit) / 1024 ** 3 : 10,
+      used: mobileUsedGB,
+      total: mobileLimitGB,
       icon: Smartphone,
       color: "bg-purple-500",
     },
   ];
 
-  // ✅ Calculate overall totals
-  const totalUsed = storageData.reduce((acc, item) => acc + item.used, 0);
-  const totalStorage = storageData.reduce((acc, item) => acc + item.total, 0);
-  const overallUsage = (totalUsed / totalStorage) * 100;
-
   return (
     <div className="space-y-6">
-      {/* 🔹 Total Storage Card */}
+      {/* ✅ Total Storage */}
       <Card>
         <CardHeader>
           <CardTitle>Total Storage</CardTitle>
@@ -78,7 +78,7 @@ function StorageOverview() {
           <div className="space-y-2">
             <div className="flex items-center justify-between">
               <span className="text-gray-600 dark:text-gray-400">
-                {totalUsed.toFixed(2)} GB of {totalStorage.toFixed(2)} GB used
+                {totalUsed.toFixed(2)} GB of {totalLimit.toFixed(2)} GB used
               </span>
               <span className="text-gray-900 dark:text-white">
                 {overallUsage.toFixed(1)}%
@@ -89,11 +89,11 @@ function StorageOverview() {
         </CardContent>
       </Card>
 
-      {/* 🔹 Individual Storage Sections */}
+      {/* ✅ Individual Services */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {storageData.map((item) => {
           const Icon = item.icon;
-          const percentage = (item.used / item.total) * 100;
+          const percentage = (item.used / item.total) * 100 || 0;
 
           return (
             <Card

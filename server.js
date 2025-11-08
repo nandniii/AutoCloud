@@ -1,59 +1,165 @@
-const express = require("express");
-const axios = require("axios");
-const cors = require("cors");
-const bodyParser = require("body-parser");
+import express from "express";
+import cors from "cors";
+import axios from "axios";
+import mongoose from "mongoose";
+import dotenv from "dotenv";
+import { OAuth2Client } from "google-auth-library";
+import User from "./models/User.js";
+
+dotenv.config();
 
 const app = express();
-app.use(cors());
-app.use(bodyParser.json());
+app.use(express.json());
 
-// Google login route
+// ✅ Enable CORS for frontend (React)
+app.use(
+  cors({
+    origin: "http://localhost:5173",
+    credentials: true,
+  })
+);
+
+// ✅ Disable COOP for Google OAuth popup
+app.use((req, res, next) => {
+  res.setHeader("Cross-Origin-Opener-Policy", "unsafe-none");
+  res.setHeader("Cross-Origin-Embedder-Policy", "unsafe-none");
+  next();
+});
+
+// ✅ MongoDB Connection
+mongoose
+  .connect(process.env.MONGO_URI)
+  .then(() => console.log("✅ MongoDB connected"))
+  .catch((err) => console.error("❌ MongoDB connection error:", err));
+
+mongoose.set("debug", true); // Logs MongoDB operations
+
+// ✅ Google OAuth2 Client
+const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
+
+// ✅ Root Route
+app.get("/", (req, res) => {
+  res.send("✅ AutoCloud backend running with Google integration");
+});
+
+// ✅ Google Login & Sync Route
 app.post("/api/auth/google", async (req, res) => {
-  const { access_token } = req.body;
-
   try {
-    // 1️⃣ Get basic user info
-    const userInfoRes = await axios.get(
+    const { access_token } = req.body;
+    if (!access_token)
+      return res.status(400).json({ message: "Access token missing" });
+
+    // 1️⃣ Verify granted scopes (for debugging)
+    const tokenInfo = await axios.get(
+      `https://www.googleapis.com/oauth2/v1/tokeninfo?access_token=${access_token}`
+    );
+    console.log("🔍 Granted Scopes:", tokenInfo.data.scope);
+
+    // 2️⃣ Fetch Google Profile
+    const profileRes = await axios.get(
       "https://www.googleapis.com/oauth2/v2/userinfo",
       { headers: { Authorization: `Bearer ${access_token}` } }
     );
-    const user = userInfoRes.data; // {name, email, picture}
 
-    // 2️⃣ Get Google Drive storage info
+    // 3️⃣ Fetch Drive Storage Info
     const driveRes = await axios.get(
       "https://www.googleapis.com/drive/v3/about?fields=storageQuota",
       { headers: { Authorization: `Bearer ${access_token}` } }
     );
-    const storage = driveRes.data.storageQuota;
 
-    // 3️⃣ Approximate Gmail usage (counts toward Drive storage)
-    const gmailUsage = storage.usageInDrive ? parseInt(storage.usageInDrive) : 0;
+    const quota = driveRes.data.storageQuota || {};
+    const bytesToGB = (b) => (b ? b / (1024 ** 3) : 0);
 
-    // 4️⃣ Prepare final user object
+    const totalLimitGB = bytesToGB(Number(quota.limit) || 15 * 1024 ** 3);
+    const totalUsageGB = bytesToGB(Number(quota.usage));
+    const driveUsageGB = bytesToGB(Number(quota.usageInDrive));
+    const gmailUsageGB = bytesToGB(Number(quota.usageInGmail));
+    const photosUsageGB = bytesToGB(Number(quota.usageInPhotos));
+
+    console.log("📊 Google Storage Breakdown:", {
+      totalUsageGB,
+      driveUsageGB,
+      gmailUsageGB,
+      photosUsageGB,
+    });
+
+    // 4️⃣ Gmail usage fallback (if API didn’t return it)
+    let gmailUsage = gmailUsageGB;
+     if (!gmailUsage) {
+      try {
+        const gmailRes = await axios.get("https://www.googleapis.com/gmail/v1/users/me/profile", {
+          headers: { Authorization: `Bearer ${access_token}` },
+        });
+        if (gmailRes.data?.quotaUsed)
+          gmailUsage = bytesToGB(gmailRes.data.quotaUsed);
+      } catch (err) {
+        console.warn("⚠️ Gmail usage unavailable, estimating...");
+      }
+    }
+
+    // 5️⃣ Photos usage fallback (approximation)
+    let photosUsage = photosUsageGB;
+    if (!photosUsage) {
+      try {
+        const photosRes = await axios.get("https://photoslibrary.googleapis.com/v1/albums?pageSize=1", {
+          headers: { Authorization: `Bearer ${access_token}` },
+        });
+        if (photosRes.data)
+          photosUsage = 1.2; // fallback estimate
+      } catch (err) {
+        console.warn("⚠️ Photos usage unavailable, using fallback...");
+      }
+    }
+
+    // 6️⃣ Mobile Backup placeholder
+    const mobileUsage = 0.5;
+
+    // 7️⃣ Construct user data
     const userData = {
-      name: user.name,
-      email: user.email,
-      picture: user.picture,
-      drive: {
-        limit: parseInt(storage.limit || 15 * 1024 ** 3), // fallback 15GB
-        usage: parseInt(storage.usage || 0),
-      },
-      gmail: {
-        limit: parseInt(storage.limit || 15 * 1024 ** 3),
-        usage: gmailUsage,
-      },
-      photos: {
-        limit: parseInt(storage.limit || 15 * 1024 ** 3),
-        usage: 0, // Google Photos API doesn't provide usage easily
-      },
+      googleId: profileRes.data.id,
+      name: profileRes.data.name,
+      email: profileRes.data.email,
+      picture: profileRes.data.picture,
+      drive: { limit: totalLimitGB, usage: driveUsageGB },
+      gmail: { limit: totalLimitGB, usage: gmailUsage },
+      photos: { limit: totalLimitGB, usage: photosUsage },
+      mobileBackup: { limit: 10, usage: mobileUsage },
+      updatedAt: new Date(),
     };
 
-    res.json({ user: userData });
+    // 8️⃣ Save or Update in MongoDB
+    const user = await User.findOneAndUpdate(
+      { email: userData.email },
+      userData,
+      { new: true, upsert: true, runValidators: true }
+    );
+
+    console.log("✅ User synced:", user.email);
+    res.json({ user });
   } catch (err) {
-    console.error("Google login error:", err.response?.data || err.message);
-    res.status(500).json({ error: "Failed to fetch Google data" });
+    console.error("❌ Insert error:", err.message);
+    res.status(500).json({ message: "Insert failed", error: err.message });
   }
 });
 
-const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+// ✅ Fetch user by email (for Dashboard)
+app.get("/api/user/:email", async (req, res) => {
+  try {
+    const email = decodeURIComponent(req.params.email);
+    const user = await User.findOne({ email });
+    if (!user) return res.status(404).json({ message: "User not found" });
+    res.json(user);
+  } catch (err) {
+    console.error("❌ Fetch user error:", err.message);
+    res
+      .status(500)
+      .json({ message: "Failed to fetch user", error: err.message });
+  }
+});
+
+// ✅ Start Server
+app.listen(process.env.PORT || 5000, () => {
+  console.log(
+    `🚀 Server running on http://localhost:${process.env.PORT || 5000}`
+  );
+});

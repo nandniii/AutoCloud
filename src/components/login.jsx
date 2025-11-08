@@ -46,8 +46,9 @@ const Login = ({ onLoginSuccess }) => {
     },
     onError: (err) => console.error("Google login error:", err),
     flow: "implicit",
-    scope:
-      "https://www.googleapis.com/auth/drive.readonly https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/photoslibrary.readonly",
+    scope: "openid https://www.googleapis.com/auth/userinfo.profile https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/drive.metadata.readonly https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/photoslibrary.readonly"
+
+
   });
 
   // ------------------ JSX RETURN ------------------
