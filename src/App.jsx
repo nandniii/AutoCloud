@@ -13,10 +13,18 @@ function App() {
 
   // ✅ Restore session on refresh
   useEffect(() => {
-    const storedUser = localStorage.getItem("user");
-    if (storedUser) {
-      setUser(JSON.parse(storedUser));
-      setIsAuthenticated(true);
+    try {
+      const storedUser = localStorage.getItem("user");
+      if (storedUser) {
+        const parsedUser = JSON.parse(storedUser);
+        if (parsedUser && parsedUser.email) {
+          setUser(parsedUser);
+          setIsAuthenticated(true);
+        }
+      }
+    } catch (err) {
+      console.warn("⚠️ Corrupted user data, clearing storage:", err);
+      localStorage.removeItem("user");
     }
   }, []);
 
@@ -26,6 +34,7 @@ function App() {
     setIsAuthenticated(false);
   };
 
+  // ✅ Show login if not authenticated
   if (!isAuthenticated) {
     return (
       <Login
@@ -39,7 +48,7 @@ function App() {
 
   return (
     <div className="flex">
-      {/* ✅ Fixed Sidebar */}
+      {/* ✅ Sidebar */}
       <aside className="fixed top-0 left-0 h-screen w-64 bg-gray-800 text-white flex flex-col justify-between p-4">
         {/* Top section */}
         <div>
@@ -69,11 +78,16 @@ function App() {
           </button>
         </div>
 
-        {/* Bottom section */}
+        {/* ✅ Bottom section */}
         <div className="border-t border-gray-700 pt-4">
           <div className="text-sm text-gray-400 mb-2 break-words">
-             <UserProfileBar user={user} />
+            {user ? (
+              <UserProfileBar user={user} handleLogout={handleLogout} />
+            ) : (
+              <div className="text-gray-500 text-xs">Loading profile...</div>
+            )}
           </div>
+
           <button
             onClick={handleLogout}
             className="w-full bg-red-500 hover:bg-red-600 text-white rounded py-2"
@@ -83,7 +97,7 @@ function App() {
         </div>
       </aside>
 
-      {/* ✅ Main Content Area (with left margin for sidebar) */}
+      {/* ✅ Main Content */}
       <main className="ml-64 flex-1 h-screen overflow-y-auto bg-gray-50 dark:bg-gray-900">
         {activePage === "dashboard" ? (
           <Dashboard user={user} handleLogout={handleLogout} />
