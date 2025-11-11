@@ -4,23 +4,32 @@ import { Progress } from "./ui/progress";
 import { HardDrive, Mail, Image, Smartphone } from "lucide-react";
 
 function StorageOverview({ user }) {
-  // ✅ Always show latest user data
-  const savedUser = JSON.parse(localStorage.getItem("user")) || {};
+  // ✅ Always use latest user data
+  const savedUser = (() => {
+    try {
+      return JSON.parse(localStorage.getItem("user")) || {};
+    } catch {
+      return {};
+    }
+  })();
+
   const mongoUser = user || savedUser || {};
 
   const num = (v) => (typeof v === "number" && !isNaN(v) ? v : 0);
 
+  // ✅ Use backend totals for overall usage
   const sharedUsed = num(mongoUser.totalUsageGB);
   const sharedLimit = num(mongoUser.totalLimitGB) || 15;
   const mobileUsed = num(mongoUser.mobileBackup?.usage) || 0.5;
   const mobileLimit = num(mongoUser.mobileBackup?.limit) || 10;
+
   const totalUsed = sharedUsed + mobileUsed;
   const totalLimit = sharedLimit + mobileLimit;
-  const sharedPercent = (sharedUsed / sharedLimit) * 100;
+  const sharedPercent = sharedLimit ? (sharedUsed / sharedLimit) * 100 : 0;
 
-  console.log("📦 Using totalUsageGB from backend:", sharedUsed, "of", sharedLimit);
+  console.log("📦 Displaying totalUsageGB from backend:", sharedUsed, "/", sharedLimit);
 
-  // 🔹 Prepare storage cards dynamically
+  // ✅ Always show all four cards
   const storageData = [
     {
       id: "drive",
@@ -56,12 +65,9 @@ function StorageOverview({ user }) {
     },
   ];
 
-  // 🔹 Filter out Gmail/Photos cards with 0 usage (API didn’t return)
-  const visibleData = storageData.filter((item) => item.used > 0);
-
   return (
     <div className="space-y-6">
-      {/* Shared Storage Summary */}
+      {/* ✅ Shared Storage Summary */}
       <Card>
         <CardHeader>
           <CardTitle>Google Shared Storage (Drive + Gmail + Photos)</CardTitle>
@@ -93,11 +99,11 @@ function StorageOverview({ user }) {
         </CardContent>
       </Card>
 
-      {/* Individual Service Breakdown */}
+      {/* ✅ Individual Service Breakdown */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {visibleData.map((item) => {
+        {storageData.map((item) => {
           const Icon = item.icon;
-          const pct = (item.used / item.total) * 100 || 0;
+          const pct = item.total ? (item.used / item.total) * 100 : 0;
 
           return (
             <Card
