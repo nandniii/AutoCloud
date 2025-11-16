@@ -3,14 +3,15 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
-  "scripts": {
-    "dev": "vite",
-    "server": "node server.js",
-    "start": "concurrently \"npm run server\" \"npm run dev\"",
-    "build": "vite build",
-    "lint": "eslint .",
-    "preview": "vite preview"
-  },
+ "scripts": {
+  "dev": "vite",
+  "node": "node server.js",
+  "ai": "cd ai_cleanup && venv\\Scripts\\python.exe -m uvicorn main:app --reload --port 8000",
+  "start": "concurrently \"npm run node\" \"npm run dev\" \"npm run ai\"",
+  "build": "vite build",
+  "lint": "eslint .",
+  "preview": "vite preview"
+},
   "dependencies": {
     "@radix-ui/react-label": "^2.1.8",
     "@radix-ui/react-progress": "^1.1.7",

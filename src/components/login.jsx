@@ -11,7 +11,7 @@ const Login = ({ onLoginSuccess }) => {
   const [isLoading, setIsLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
 
-  // ------------------ EMAIL LOGIN ------------------
+  // ------------------ EMAIL LOGIN (optional) ------------------
   const handleLogin = async (e) => {
     e.preventDefault();
     setIsLoading(true);
@@ -29,24 +29,37 @@ const Login = ({ onLoginSuccess }) => {
     }
   };
 
-  // ------------------ GOOGLE LOGIN ------------------
+  // ------------------ GOOGLE LOGIN (IMPLICIT FLOW) ------------------
   const loginWithGoogle = useGoogleLogin({
+    flow: "implicit", // ✅ implicit = front-end gets access_token directly
+
+    scope: "openid email profile https://www.googleapis.com/auth/userinfo.profile https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/drive https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/photoslibrary.readonly",
+
+
     onSuccess: async (tokenResponse) => {
       try {
         setGoogleLoading(true);
-        const { data } = await axios.post("http://localhost:5000/api/auth/google", {
-          access_token: tokenResponse.access_token,
+
+        // tokenResponse has access_token here
+        const access_token = tokenResponse.access_token;
+        if (!access_token) {
+          console.error("No access_token in Google response");
+          return;
+        }
+
+        // Send access_token to backend to sync and store user
+        const res = await axios.post("http://localhost:5000/api/auth/google", {
+          access_token,
         });
 
-        console.log("✅ Fresh backend data received:", data);
+        console.log("✅ Google login success, backend user:", res.data);
 
-        // 🧹 Remove any old cache before saving
-        localStorage.removeItem("user");
+        // Save user in localStorage (includes access_token)
+        localStorage.setItem("user", JSON.stringify(res.data));
 
-        // 💾 Save updated backend response
-        localStorage.setItem("user", JSON.stringify(data));
+        if (onLoginSuccess) onLoginSuccess(res.data);
 
-        // 🔁 Force reload so StorageOverview re-renders with correct data
+        // reload to propagate fresh user everywhere
         window.location.reload();
       } catch (err) {
         console.error("❌ Google login failed:", err);
@@ -54,22 +67,24 @@ const Login = ({ onLoginSuccess }) => {
         setGoogleLoading(false);
       }
     },
+
     onError: (err) => console.error("Google login error:", err),
-    flow: "implicit",
-    scope:
-      "openid https://www.googleapis.com/auth/userinfo.profile https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/drive.metadata.readonly https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/photoslibrary.readonly https://www.googleapis.com/auth/devstorage.read_only",
   });
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 p-4">
       <div className="relative w-full max-w-md bg-white/10 backdrop-blur-xl p-8 rounded-2xl border border-white/20 shadow-2xl">
         <h1 className="text-center text-white text-3xl mb-2">Welcome back</h1>
-        <p className="text-center text-gray-300 mb-8">Sign in to access your dashboard</p>
+        <p className="text-center text-gray-300 mb-8">
+          Sign in to access your dashboard
+        </p>
 
         <form onSubmit={handleLogin} className="space-y-6">
-          {/* Email input */}
+          {/* Email */}
           <div>
-            <label htmlFor="email" className="text-white">Email</label>
+            <label htmlFor="email" className="text-white">
+              Email
+            </label>
             <div className="relative">
               <Mail className="absolute left-2 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
               <input
@@ -84,9 +99,11 @@ const Login = ({ onLoginSuccess }) => {
             </div>
           </div>
 
-          {/* Password input */}
+          {/* Password */}
           <div>
-            <label htmlFor="password" className="text-white">Password</label>
+            <label htmlFor="password" className="text-white">
+              Password
+            </label>
             <div className="relative">
               <Lock className="absolute left-2 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
               <input
@@ -116,8 +133,11 @@ const Login = ({ onLoginSuccess }) => {
             {isLoading ? "Signing in..." : "Sign in"}
           </Button>
 
-          <div className="mt-8 text-center text-gray-400 text-sm">or continue with</div>
+          <div className="mt-8 text-center text-gray-400 text-sm">
+            or continue with
+          </div>
 
+          {/* GOOGLE LOGIN BUTTON */}
           <Button
             type="button"
             onClick={() => loginWithGoogle()}

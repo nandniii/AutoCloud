@@ -1,19 +1,17 @@
 import React, { useEffect, useState } from "react";
 import StorageOverview from "./StorageOverview";
 import StorageCharts from "./StorageCharts";
+import MediaDashboard from "./MediaDashboard"; // ⬅️ IMPORT THIS
 
 function Dashboard({ user }) {
   const [storageData, setStorageData] = useState([]);
 
   useEffect(() => {
-    // Debug: log incoming user
     console.log("Dashboard: user prop:", user);
 
-    // Build storageData even if some fields are missing
     const buildData = (u) => {
       if (!u) return [];
 
-      // Backend already provides GB values, so use them directly
       const driveUsed = typeof u.drive?.usage === "number" ? u.drive.usage : 0;
       const driveTotal = typeof u.drive?.limit === "number" ? u.drive.limit : 15;
 
@@ -35,7 +33,6 @@ function Dashboard({ user }) {
     };
 
     const data = buildData(user);
-    console.log("Dashboard: storageData built:", data);
     setStorageData(data);
   }, [user]);
 
@@ -49,8 +46,16 @@ function Dashboard({ user }) {
 
   return (
     <div className="space-y-10 max-w-7xl mx-auto pt-24 pb-8 px-4">
+
+      {/* Overview cards */}
       <StorageOverview user={user} />
+
+      {/* Donut/Bar charts */}
       <StorageCharts data={storageData} />
+
+      {/* ⭐ Media Dashboard (Images, PDFs, Videos) */}
+      <MediaDashboard access_token={user?.access_token} />
+
     </div>
   );
 }

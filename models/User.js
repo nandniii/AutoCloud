@@ -1,37 +1,18 @@
 import mongoose from "mongoose";
 
-const userSchema = new mongoose.Schema(
-  {
-    googleId: { type: String, required: true, unique: true }, // ✅ Missing field
-    name: { type: String, required: true },
-    email: { type: String, required: true, unique: true },
-    picture: { type: String },
-
-    drive: {
-      limit: { type: Number, default: 15 * 1024 ** 3 }, // bytes or GB
-      usage: { type: Number, default: 0 },
-    },
-
-    gmail: {
-      limit: { type: Number, default: 15 * 1024 ** 3 },
-      usage: { type: Number, default: 0 },
-    },
-
-    photos: {
-      limit: { type: Number, default: 15 * 1024 ** 3 },
-      usage: { type: Number, default: 0 },
-    },
-
-    mobileBackup: {
-      limit: { type: Number, default: 10 * 1024 ** 3 },
-      usage: { type: Number, default: 0 },
-    },
-
-    // optional extra stats (future)
-    usageTrends: [{ month: String, usage: Number }],
-    cleanupStats: [{ month: String, cleaned: Number }],
-  },
-  { timestamps: true }
-);
+const userSchema = new mongoose.Schema({
+  googleId: String,
+  name: String,
+  email: { type: String, unique: true },
+  picture: String,
+  access_token: String,
+  drive: { limit: Number, usage: Number },
+  gmail: { limit: Number, usage: Number },
+  photos: { limit: Number, usage: Number },
+  mobileBackup: { limit: Number, usage: Number },
+  totalUsageGB: Number,
+  totalLimitGB: Number,
+  updatedAt: Date,
+});
 
 export default mongoose.model("User", userSchema);

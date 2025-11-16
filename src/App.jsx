@@ -3,6 +3,7 @@ import "./App.css";
 import Login from "./components/Login";
 import Dashboard from "./components/Dashboard";
 import RuleManager from "./components/RuleManager";
+import CleanupHistory from "./components/CleanupHistory";   // ⭐ ADD THIS
 import ThemeToggle from "./components/ThemeToggle";
 import UserProfileBar from "./components/UserProfileBar";
 
@@ -11,7 +12,7 @@ function App() {
   const [user, setUser] = useState(null);
   const [activePage, setActivePage] = useState("dashboard"); // sidebar navigation
 
-  // ✅ Restore session on refresh
+  // Restore session
   useEffect(() => {
     try {
       const storedUser = localStorage.getItem("user");
@@ -34,7 +35,6 @@ function App() {
     setIsAuthenticated(false);
   };
 
-  // ✅ Show login if not authenticated
   if (!isAuthenticated) {
     return (
       <Login
@@ -48,8 +48,9 @@ function App() {
 
   return (
     <div className="flex">
-      {/* ✅ Sidebar */}
+      {/* Sidebar */}
       <aside className="fixed top-0 left-0 h-screen w-64 bg-gray-800 text-white flex flex-col justify-between p-4">
+        
         {/* Top section */}
         <div>
           <div className="flex items-center justify-between mb-6">
@@ -57,6 +58,7 @@ function App() {
             <ThemeToggle />
           </div>
 
+          {/* Dashboard */}
           <button
             onClick={() => setActivePage("dashboard")}
             className={`w-full p-2 rounded mb-2 text-left ${
@@ -66,9 +68,10 @@ function App() {
             Dashboard
           </button>
 
+          {/* Rule Manager */}
           <button
             onClick={() => setActivePage("ruleManager")}
-            className={`w-full p-2 rounded text-left ${
+            className={`w-full p-2 rounded mb-2 text-left ${
               activePage === "ruleManager"
                 ? "bg-purple-600"
                 : "hover:bg-gray-700"
@@ -76,9 +79,21 @@ function App() {
           >
             Rule Manager
           </button>
+
+          {/* ⭐ ADD CLEANUP HISTORY BUTTON */}
+          <button
+            onClick={() => setActivePage("cleanupHistory")}
+            className={`w-full p-2 rounded mb-2 text-left ${
+              activePage === "cleanupHistory"
+                ? "bg-purple-600"
+                : "hover:bg-gray-700"
+            }`}
+          >
+            Cleanup History
+          </button>
         </div>
 
-        {/* ✅ Bottom section */}
+        {/* Bottom section */}
         <div className="border-t border-gray-700 pt-4">
           <div className="text-sm text-gray-400 mb-2 break-words">
             {user ? (
@@ -97,12 +112,18 @@ function App() {
         </div>
       </aside>
 
-      {/* ✅ Main Content */}
-      <main className="ml-64 flex-1 h-screen overflow-y-auto bg-gray-50 dark:bg-gray-900">
-        {activePage === "dashboard" ? (
+      {/* ⭐ Main Content Routing */}
+      <main className="ml-64 flex-1 min-h-screen overflow-y-auto bg-gray-50 dark:bg-gray-900 p-6 pt-24">
+        {activePage === "dashboard" && (
           <Dashboard user={user} handleLogout={handleLogout} />
-        ) : (
-          <RuleManager />
+        )}
+
+        {activePage === "ruleManager" && <RuleManager />}
+
+        {activePage === "cleanupHistory" && (
+          <div className="max-w-5xl mx-auto">
+            <CleanupHistory />
+          </div>
         )}
       </main>
     </div>

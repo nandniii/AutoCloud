@@ -1,80 +1,80 @@
-import { useState, useEffect } from 'react';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
-import { Button } from './ui/button';
-import { Input } from './ui/input';
-import { Label } from './ui/label';
-import { Switch } from './ui/switch';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
-import { Badge } from './ui/badge';
-import { Trash2, Edit2, Plus, Save, X } from 'lucide-react';
-import { toast } from 'sonner';
+import { useState, useEffect } from "react";
+import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
+import { Button } from "./ui/button";
+import { Input } from "./ui/input";
+import { Label } from "./ui/label";
+import { Switch } from "./ui/switch";
+import { Badge } from "./ui/badge";
+import { Trash2, Edit2, Plus, Save, X, Play } from "lucide-react";
+import { toast } from "sonner";
+import axios from "axios";
 
 export default function RuleManager() {
-  const [rules, setRules] = useState([]);
-  const [automationEnabled, setAutomationEnabled] = useState(true);
+  const [rules, setRules] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem("cleanupRules")) || [];
+    } catch {
+      return [];
+    }
+  });
+
+  const [automationEnabled, setAutomationEnabled] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem("automationEnabled")) || false;
+    } catch {
+      return false;
+    }
+  });
+
   const [editingId, setEditingId] = useState(null);
   const [showAddForm, setShowAddForm] = useState(false);
+
+  const [previewFiles, setPreviewFiles] = useState([]);
+  const [showPreview, setShowPreview] = useState(false);
+
   const [formData, setFormData] = useState({
-    name: '',
-    storageType: 'localStorage',
-    pattern: '',
-    action: 'delete',
-    condition: 'older-than',
-    value: '',
+    name: "",
+    pattern: "",
+    condition: "older-than",
+    value: "",
+    action: "delete",
     enabled: true,
   });
 
-  // Load rules from localStorage on mount
-  useEffect(() => {
-    const savedRules = localStorage.getItem('cleanupRules');
-    const savedAutomation = localStorage.getItem('automationEnabled');
-    if (savedRules) setRules(JSON.parse(savedRules));
-    if (savedAutomation !== null) setAutomationEnabled(JSON.parse(savedAutomation));
-  }, []);
-
   // Save rules
   useEffect(() => {
-    if (rules.length > 0) {
-      localStorage.setItem('cleanupRules', JSON.stringify(rules));
-    }
+    localStorage.setItem("cleanupRules", JSON.stringify(rules));
   }, [rules]);
 
-  // Save automation state
   useEffect(() => {
-    localStorage.setItem('automationEnabled', JSON.stringify(automationEnabled));
+    localStorage.setItem("automationEnabled", JSON.stringify(automationEnabled));
   }, [automationEnabled]);
 
-  const handleAddRule = () => {
+  // Save rule
+  const handleSaveRule = () => {
     if (!formData.name || !formData.pattern || !formData.value) {
-      toast.error('Please fill in all required fields');
+      toast.error("Please fill all fields");
       return;
     }
 
-    const newRule = {
-      id: Date.now().toString(),
-      ...formData,
-      createdAt: new Date().toISOString(),
-    };
-
-    setRules([...rules, newRule]);
-    resetForm();
-    toast.success('Rule added successfully');
-  };
-
-  const handleUpdateRule = () => {
-    if (!formData.name || !formData.pattern || !formData.value) {
-      toast.error('Please fill in all required fields');
-      return;
+    if (editingId) {
+      setRules((prev) =>
+        prev.map((rule) =>
+          rule.id === editingId ? { ...rule, ...formData } : rule
+        )
+      );
+      toast.success("Rule updated");
+    } else {
+      setRules((prev) => [...prev, { id: Date.now().toString(), ...formData }]);
+      toast.success("Rule added");
     }
 
-    setRules(rules.map(rule => rule.id === editingId ? { ...rule, ...formData } : rule));
     resetForm();
-    toast.success('Rule updated successfully');
   };
 
   const handleDeleteRule = (id) => {
-    setRules(rules.filter(rule => rule.id !== id));
-    toast.success('Rule deleted');
+    setRules((prev) => prev.filter((r) => r.id !== id));
+    toast.success("Rule deleted");
   };
 
   const handleEditRule = (rule) => {
@@ -83,193 +83,191 @@ export default function RuleManager() {
     setShowAddForm(true);
   };
 
-  const toggleRuleEnabled = (id) => {
-    setRules(rules.map(rule => rule.id === id ? { ...rule, enabled: !rule.enabled } : rule));
-  };
-
   const resetForm = () => {
     setFormData({
-      name: '',
-      storageType: 'localStorage',
-      pattern: '',
-      action: 'delete',
-      condition: 'older-than',
-      value: '',
+      name: "",
+      pattern: "",
+      condition: "older-than",
+      value: "",
+      action: "delete",
       enabled: true,
     });
     setEditingId(null);
     setShowAddForm(false);
   };
 
-  const getConditionLabel = (condition) => {
-    const labels = {
-      'older-than': 'Older than',
-      'larger-than': 'Larger than',
-      'contains': 'Contains',
-      'matches': 'Matches pattern',
-    };
-    return labels[condition] || condition;
+  // =======================
+  // ⭐ PREVIEW CLEANUP
+  // =======================
+  const previewDriveCleanup = async () => {
+    try {
+      const user = JSON.parse(localStorage.getItem("user"));
+      if (!user?.access_token) return toast.error("Login first.");
+
+      if (rules.length === 0)
+        return toast.error("You must add at least one rule.");
+
+      toast.loading("Scanning Drive...");
+
+      const response = await axios.post(
+        "http://localhost:5000/api/cleanup/drive",
+        {
+          access_token: user.access_token,
+          email: user.email,
+          rules,
+          previewOnly: true, // ⭐ Store in DB + return preview
+        }
+      );
+
+      toast.dismiss();
+
+      const matched = response.data?.matchedFiles || [];
+      setPreviewFiles(matched);
+      setShowPreview(true);
+
+      toast.success(`Found ${matched.length} files`);
+    } catch (err) {
+      toast.dismiss();
+      console.error(err);
+      toast.error("Preview failed");
+    }
+  };
+
+  // =======================
+  // ⭐ CONFIRM CLEANUP
+  // =======================
+  const confirmDriveCleanup = async () => {
+    try {
+      const user = JSON.parse(localStorage.getItem("user"));
+      if (!user?.access_token) return toast.error("Login first.");
+
+      toast.loading("Deleting files...");
+
+      const response = await axios.post(
+        "http://localhost:5000/api/cleanup/drive",
+        {
+          access_token: user.access_token,
+          email: user.email,
+          rules,
+          previewOnly: false, // ⭐ Now delete from Drive
+        }
+      );
+
+      toast.dismiss();
+
+      toast.success(
+        `Deleted ${response.data.summary?.movedToBin || 0} files successfully`
+      );
+
+      setShowPreview(false);
+      setPreviewFiles([]);
+    } catch (err) {
+      toast.dismiss();
+      console.error(err);
+      toast.error("Cleanup failed");
+    }
   };
 
   return (
     <div className="space-y-6">
-      {/* Automation Toggle */}
+      {/* Automation */}
       <Card>
         <CardHeader>
-          <div className="flex items-center justify-between">
-            <div>
-              <CardTitle>Automation Status</CardTitle>
-              <CardDescription>Enable or disable automatic storage cleanup</CardDescription>
-            </div>
-            <div className="flex items-center gap-3">
-              <Badge variant={automationEnabled ? 'default' : 'secondary'}>
-                {automationEnabled ? 'Active' : 'Paused'}
-              </Badge>
-              <Switch checked={automationEnabled} onCheckedChange={setAutomationEnabled} />
-            </div>
-          </div>
+          <CardTitle>Automation</CardTitle>
         </CardHeader>
+
+        <CardContent className="flex items-center justify-between">
+          <Badge variant={automationEnabled ? "default" : "secondary"}>
+            {automationEnabled ? "Active" : "Paused"}
+          </Badge>
+
+          <Switch
+            checked={automationEnabled}
+            onCheckedChange={setAutomationEnabled}
+          />
+        </CardContent>
+
+        <div className="px-6 pb-4">
+          <Button
+            onClick={previewDriveCleanup}
+            className="w-full bg-purple-600 hover:bg-purple-700"
+          >
+            <Play className="size-4 mr-2" /> Preview Drive Cleanup
+          </Button>
+        </div>
       </Card>
 
       {/* Add Rule Button */}
       {!showAddForm && (
         <Button onClick={() => setShowAddForm(true)} className="w-full">
-          <Plus className="size-4 mr-2" /> Add New Rule
+          <Plus className="size-4 mr-2" /> Add Rule
         </Button>
       )}
 
-      {/* Add/Edit Form */}
+      {/* Add/Edit Rule Form */}
       {showAddForm && (
         <Card>
           <CardHeader>
-            <CardTitle>{editingId ? 'Edit Rule' : 'Add New Rule'}</CardTitle>
-            <CardDescription>Configure your storage cleanup rule</CardDescription>
+            <CardTitle>{editingId ? "Edit Rule" : "Add Rule"}</CardTitle>
           </CardHeader>
-          <CardContent className="space-y-4">
-            {/* Rule name */}
-            <div className="space-y-2">
-              <Label htmlFor="name">Rule Name</Label>
-              <Select
-                value={formData.name}
-                onValueChange={(value) => setFormData({ ...formData, name: value })}
-              >
-                <SelectTrigger id="name">
-                  <SelectValue placeholder="Select a rule name" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="Clear old session data">Clear old session data</SelectItem>
-                  <SelectItem value="Remove temporary files">Remove temporary files</SelectItem>
-                  <SelectItem value="Clean cache data">Clean cache data</SelectItem>
-                  <SelectItem value="Delete expired tokens">Delete expired tokens</SelectItem>
-                  <SelectItem value="Archive old user data">Archive old user data</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
 
-            {/* Storage Type + Action */}
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="storageType">Storage Type</Label>
-                <Select
-                  value={formData.storageType}
-                  onValueChange={(value) => setFormData({ ...formData, storageType: value })}
-                >
-                  <SelectTrigger id="storageType">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="localStorage">Local Storage</SelectItem>
-                    <SelectItem value="sessionStorage">Session Storage</SelectItem>
-                    <SelectItem value="cookies">Cookies</SelectItem>
-                    <SelectItem value="indexedDB">IndexedDB</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
+          <CardContent className="space-y-3">
+            <Label>Rule Name</Label>
+            <Input
+              value={formData.name}
+              onChange={(e) =>
+                setFormData({ ...formData, name: e.target.value })
+              }
+            />
 
-              <div className="space-y-2">
-                <Label htmlFor="action">Action</Label>
-                <Select
-                  value={formData.action}
-                  onValueChange={(value) => setFormData({ ...formData, action: value })}
-                >
-                  <SelectTrigger id="action">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="delete">Delete</SelectItem>
-                    <SelectItem value="expire">Mark as Expired</SelectItem>
-                    <SelectItem value="archive">Archive</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
+            <Label>Pattern</Label>
+            <Input
+              value={formData.pattern}
+              onChange={(e) =>
+                setFormData({ ...formData, pattern: e.target.value })
+              }
+            />
 
-            {/* Pattern + Condition */}
-            <div className="space-y-2">
-              <Label htmlFor="pattern">Key Pattern</Label>
-              <Input
-                id="pattern"
-                placeholder="e.g., user_*, temp_*"
-                value={formData.pattern}
-                onChange={(e) => setFormData({ ...formData, pattern: e.target.value })}
-              />
-            </div>
+            <Label>Condition</Label>
+            <select
+              value={formData.condition}
+              onChange={(e) =>
+                setFormData({ ...formData, condition: e.target.value })
+              }
+              className="w-full p-2 rounded border bg-transparent"
+            >
+              <option value="older-than">Older Than (days)</option>
+              <option value="larger-than">Larger Than (MB)</option>
+              <option value="contains">Name Contains</option>
+            </select>
 
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="condition">Condition</Label>
-                <Select
-                  value={formData.condition}
-                  onValueChange={(value) => setFormData({ ...formData, condition: value })}
-                >
-                  <SelectTrigger id="condition">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="older-than">Older than</SelectItem>
-                    <SelectItem value="larger-than">Larger than</SelectItem>
-                    <SelectItem value="contains">Contains</SelectItem>
-                    <SelectItem value="matches">Matches pattern</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
+            <Label>Value</Label>
+            <Input
+              value={formData.value}
+              onChange={(e) =>
+                setFormData({ ...formData, value: e.target.value })
+              }
+            />
 
-              <div className="space-y-2">
-                <Label htmlFor="value">Value</Label>
-                <Input
-                  id="value"
-                  placeholder={
-                    formData.condition === 'older-than'
-                      ? 'e.g., 30 days'
-                      : formData.condition === 'larger-than'
-                      ? 'e.g., 1MB'
-                      : 'e.g., text or pattern'
-                  }
-                  value={formData.value}
-                  onChange={(e) => setFormData({ ...formData, value: e.target.value })}
-                />
-              </div>
-            </div>
+            <Label>Action</Label>
+            <select
+              value={formData.action}
+              onChange={(e) =>
+                setFormData({ ...formData, action: e.target.value })
+              }
+              className="w-full p-2 rounded border bg-transparent"
+            >
+              <option value="delete">Delete</option>
+              <option value="move">Move to Folder</option>
+              <option value="mark">Mark Only</option>
+            </select>
 
-            {/* Enable Rule */}
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Switch
-                  id="enabled"
-                  checked={formData.enabled}
-                  onCheckedChange={(checked) => setFormData({ ...formData, enabled: checked })}
-                />
-                <Label htmlFor="enabled">Enable this rule</Label>
-              </div>
-            </div>
-
-            {/* Buttons */}
-            <div className="flex gap-2 pt-4">
-              <Button onClick={editingId ? handleUpdateRule : handleAddRule} className="flex-1">
-                <Save className="size-4 mr-2" />
-                {editingId ? 'Update Rule' : 'Save Rule'}
+            <div className="flex gap-2">
+              <Button onClick={handleSaveRule} className="flex-1">
+                <Save className="size-4 mr-2" /> Save
               </Button>
-              <Button onClick={resetForm} variant="outline">
+
+              <Button variant="outline" onClick={resetForm}>
                 <X className="size-4 mr-2" /> Cancel
               </Button>
             </div>
@@ -277,59 +275,87 @@ export default function RuleManager() {
         </Card>
       )}
 
-      {/* Active Rules List */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Active Rules</CardTitle>
-          <CardDescription>
-            {rules.length === 0
-              ? 'No rules configured yet'
-              : `${rules.filter((r) => r.enabled).length} of ${rules.length} rules active`}
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          {rules.length === 0 ? (
-            <div className="text-center py-8 text-slate-500">
-              <p>No rules created yet. Add your first rule to get started.</p>
+      {/* Rule List */}
+      {rules.length === 0 && (
+        <p className="text-sm text-gray-500 text-center">
+          No rules created yet.
+        </p>
+      )}
+
+      {rules.map((rule) => (
+        <Card key={rule.id}>
+          <CardContent className="space-y-2">
+            <h3 className="font-semibold">{rule.name}</h3>
+
+            <p className="text-sm text-gray-500">
+              Pattern: {rule.pattern} <br />
+              Condition: {rule.condition} = {rule.value} <br />
+              Action: {rule.action}
+            </p>
+
+            <div className="flex gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => handleEditRule(rule)}
+              >
+                <Edit2 className="size-4 mr-2" /> Edit
+              </Button>
+
+              <Button
+                size="sm"
+                variant="destructive"
+                onClick={() => handleDeleteRule(rule.id)}
+              >
+                <Trash2 className="size-4 mr-2" /> Delete
+              </Button>
             </div>
-          ) : (
-            rules.map((rule) => (
-              <div key={rule.id} className="border rounded-lg p-4 space-y-3 bg-white">
-                <div className="flex items-start justify-between">
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2 mb-2">
-                      <h4 className="text-slate-900">{rule.name}</h4>
-                      <Badge variant={rule.enabled ? 'default' : 'secondary'}>
-                        {rule.enabled ? 'Enabled' : 'Disabled'}
-                      </Badge>
-                    </div>
-                    <div className="grid grid-cols-2 gap-2 text-slate-600">
-                      <div><span className="text-slate-500">Storage:</span> {rule.storageType}</div>
-                      <div><span className="text-slate-500">Action:</span> {rule.action}</div>
-                      <div><span className="text-slate-500">Pattern:</span> {rule.pattern}</div>
-                      <div><span className="text-slate-500">{getConditionLabel(rule.condition)}:</span> {rule.value}</div>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Switch
-                      checked={rule.enabled}
-                      onCheckedChange={() => toggleRuleEnabled(rule.id)}
-                    />
+          </CardContent>
+        </Card>
+      ))}
+
+      {/* Preview Modal */}
+      {showPreview && (
+        <div className="fixed inset-0 bg-black/70 flex justify-center items-center z-50">
+          <div className="bg-white dark:bg-gray-900 rounded-xl shadow-lg w-[90%] max-w-2xl p-6">
+            <h2 className="text-lg font-bold mb-4">
+              Preview ({previewFiles.length} files)
+            </h2>
+
+            <div className="max-h-[400px] overflow-y-auto space-y-3">
+              {previewFiles.map((file) => (
+                <div
+                  key={file.id}
+                  className="flex justify-between items-center border-b border-gray-200 dark:border-gray-700 pb-2"
+                >
+                  <div>
+                    <p className="text-sm font-medium">{file.name}</p>
+                    <p className="text-xs text-gray-500">
+                      {(file.sizeBytes / 1024 / 1024).toFixed(2)} MB •{" "}
+                      {file.modifiedTime
+                        ? new Date(file.modifiedTime).toLocaleDateString()
+                        : "Unknown Date"}
+                    </p>
                   </div>
                 </div>
-                <div className="flex gap-2 pt-2 border-t">
-                  <Button size="sm" variant="outline" onClick={() => handleEditRule(rule)}>
-                    <Edit2 className="size-4 mr-2" /> Edit
-                  </Button>
-                  <Button size="sm" variant="destructive" onClick={() => handleDeleteRule(rule.id)}>
-                    <Trash2 className="size-4 mr-2" /> Delete
-                  </Button>
-                </div>
-              </div>
-            ))
-          )}
-        </CardContent>
-      </Card>
+              ))}
+            </div>
+
+            <div className="flex justify-end mt-4 gap-2">
+              <Button variant="outline" onClick={() => setShowPreview(false)}>
+                Cancel
+              </Button>
+
+              <Button
+                className="bg-red-600 hover:bg-red-700"
+                onClick={confirmDriveCleanup}
+              >
+                Confirm Delete
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
