@@ -33,7 +33,7 @@ const Login = ({ onLoginSuccess }) => {
   const loginWithGoogle = useGoogleLogin({
     flow: "implicit", // ✅ implicit = front-end gets access_token directly
 
-    scope: "openid email profile https://www.googleapis.com/auth/userinfo.profile https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/drive https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/photoslibrary.readonly",
+    scope: "openid email profile https://www.googleapis.com/auth/userinfo.profile https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/drive https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/drive https://www.googleapis.com/auth/photoslibrary.readonly",
 
 
     onSuccess: async (tokenResponse) => {

@@ -53,7 +53,7 @@ function Dashboard({ user }) {
       {/* Donut/Bar charts */}
       <StorageCharts data={storageData} />
 
-      {/* ⭐ Media Dashboard (Images, PDFs, Videos) */}
+      {/*  Media Dashboard (Images, PDFs, Videos) */}
       <MediaDashboard access_token={user?.access_token} />
 
     </div>

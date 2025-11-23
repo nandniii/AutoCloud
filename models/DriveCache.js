@@ -1,4 +1,3 @@
-// models/DriveCache.js
 import mongoose from "mongoose";
 
 const DriveCacheSchema = new mongoose.Schema({
@@ -8,8 +7,10 @@ const DriveCacheSchema = new mongoose.Schema({
       id: String,
       name: String,
       mimeType: String,
-      sizeBytes: Number,
+      size: String,
       modifiedTime: String,
+      createdTime: String,
+      trashed: Boolean,
     },
   ],
   updatedAt: { type: Date, default: Date.now },

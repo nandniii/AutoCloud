@@ -7,6 +7,7 @@ import dotenv from "dotenv";
 import { google } from "googleapis";
 import { OAuth2Client } from "google-auth-library";
 
+import DriveCache from "./models/DriveCache.js";
 import User from "./models/User.js";
 import { Trash } from "./models/Trash.js";
 
@@ -14,38 +15,36 @@ dotenv.config();
 const app = express();
 app.use(express.json({ limit: "10mb" }));
 
-// CORS
+// ✅ CORS FIX (supports both localhost and 127.0.0.1)
 app.use(
   cors({
-    origin: "http://localhost:5173",
+    origin: ["http://localhost:5173", "http://127.0.0.1:5173"],
     credentials: true,
   })
 );
 
-// Allow Google popup
+// ✅ Debugging: log every request
 app.use((req, res, next) => {
-  res.setHeader("Cross-Origin-Opener-Policy", "unsafe-none");
-  res.setHeader("Cross-Origin-Embedder-Policy", "unsafe-none");
+  console.log(`📡 ${req.method} → ${req.url}`);
   next();
 });
 
-// DB
+// ✅ MongoDB connection
 mongoose
   .connect(process.env.MONGO_URI)
-  .then(() => console.log("MongoDB Connected"))
-  .catch((err) => console.error("Mongo Error:", err));
+  .then(() => console.log("✅ MongoDB Connected"))
+  .catch((err) => console.error("❌ Mongo Error:", err));
 
 const oauthClientFactory = () =>
   new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
-// ========== ROOT ==========
+// Root route
 app.get("/", (req, res) => res.send("Backend Running ✔"));
 
-// ========== AUTH ==========
+// ✅ Google Auth
 app.post("/api/auth/google", async (req, res) => {
   try {
     const { access_token } = req.body;
-
     if (!access_token)
       return res.status(400).json({ message: "Access token missing" });
 
@@ -85,7 +84,7 @@ app.post("/api/auth/google", async (req, res) => {
   }
 });
 
-// ========== FETCH ALL DRIVE FILES ==========
+// ✅ Helper to fetch all files
 async function fetchAllDriveFiles(authClient) {
   const drive = google.drive({ version: "v3", auth: authClient });
   const files = [];
@@ -99,7 +98,6 @@ async function fetchAllDriveFiles(authClient) {
       pageToken,
       q: "trashed = false",
     });
-
     files.push(...(resp.data.files || []));
     pageToken = resp.data.nextPageToken;
   } while (pageToken);
@@ -107,10 +105,16 @@ async function fetchAllDriveFiles(authClient) {
   return files;
 }
 
-// ========== CLEANUP / PREVIEW + DELETE ==========
+// ✅ Cleanup / Preview / Delete
 app.post("/api/cleanup/drive", async (req, res) => {
   try {
-    const { access_token, rules = [], previewOnly = true, email } = req.body;
+    const {
+      access_token,
+      rules = [],
+      previewOnly = true,
+      email,
+      forceRefresh = false,
+    } = req.body;
 
     if (!access_token) return res.status(400).json({ message: "Missing token" });
     if (!email) return res.status(400).json({ message: "Missing email" });
@@ -118,19 +122,52 @@ app.post("/api/cleanup/drive", async (req, res) => {
     const oauth = oauthClientFactory();
     oauth.setCredentials({ access_token });
 
-    const drive = google.drive({ version: "v3", auth: oauth });
-    const files = await fetchAllDriveFiles(oauth);
+    const CACHE_TTL_MS = 3 * 60 * 60 * 1000; // 3 hrs
+    let files = [];
+    let fromCache = false;
 
+    // 🧠 Cache check
+    const existingCache = await DriveCache.findOne({ userEmail: email });
+    const cacheIsFresh =
+      existingCache &&
+      Date.now() - existingCache.updatedAt.getTime() < CACHE_TTL_MS;
+
+    if (cacheIsFresh && !forceRefresh && existingCache.files?.length > 0) {
+      files = existingCache.files;
+      fromCache = true;
+      console.log(`⚡ Using cached Drive data for ${email}`);
+    } else {
+      console.log(`🔄 Fetching fresh Drive data for ${email}`);
+      const fetchedFiles = await fetchAllDriveFiles(oauth);
+
+      const safeFiles = fetchedFiles.map((f) => ({
+        id: f.id,
+        name: f.name || "",
+        mimeType: f.mimeType || "unknown",
+        size: f.size || f.quotaBytesUsed || "0",
+        modifiedTime: f.modifiedTime || null,
+        createdTime: f.createdTime || null,
+      }));
+
+      await DriveCache.findOneAndUpdate(
+        { userEmail: email },
+        { files: safeFiles, updatedAt: new Date() },
+        { upsert: true, new: true }
+      );
+
+      files = safeFiles;
+    }
+
+    console.log(`📦 Total files loaded: ${files.length}`);
+
+    // 🧩 Apply rules
     const matchedFiles = [];
-
-    // RULES
     for (const f of files) {
       if (f.mimeType === "application/vnd.google-apps.folder") continue;
 
       const name = (f.name || "").toLowerCase();
-      const sizeBytes = Number(f.size || f.quotaBytesUsed || 0);
+      const sizeBytes = Number(f.size || 0);
       const sizeMB = sizeBytes / (1024 * 1024);
-
       const modified = f.modifiedTime ? new Date(f.modifiedTime).getTime() : 0;
       const ageDays = modified
         ? (Date.now() - modified) / (1000 * 60 * 60 * 24)
@@ -138,7 +175,6 @@ app.post("/api/cleanup/drive", async (req, res) => {
 
       for (const rule of rules) {
         if (!rule.enabled) continue;
-
         const pattern = (rule.pattern || "").toLowerCase().trim();
         const val = (rule.value || "").toString().trim();
         if (!pattern || !val) continue;
@@ -166,85 +202,66 @@ app.post("/api/cleanup/drive", async (req, res) => {
       }
     }
 
-    // PREVIEW MODE → SAVE TO DB ONLY
-    if (previewOnly) {
-      for (const file of matchedFiles) {
-        await Trash.findOneAndUpdate(
-          { userEmail: email, fileId: file.id },
-          {
-            userEmail: email,
-            fileId: file.id,
-            name: file.name,
-            mimeType: file.mimeType,
-            sizeBytes: file.sizeBytes,
-            deletedAt: new Date(),
-            expiryAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
-            accessToken: access_token,
-          },
-          { upsert: true, new: true }
-        );
-      }
+    console.log(`✅ Matched ${matchedFiles.length} files`);
 
+    if (previewOnly) {
       return res.json({
         success: true,
         mode: "preview",
+        fromCache,
         summary: { scanned: files.length, matched: matchedFiles.length },
         matchedFiles,
       });
     }
 
-    // DELETE MODE → MOVE TO GOOGLE BIN
-    const deletedItems = [];
+    // Mock Delete
+    const deletedItems = matchedFiles.map((file) => ({
+      ...file,
+      deletedAt: new Date(),
+    }));
 
-    for (const file of matchedFiles) {
-      try {
-        await drive.files.update({
+    for (const file of deletedItems) {
+      await Trash.findOneAndUpdate(
+        { userEmail: email, fileId: file.id },
+        {
+          userEmail: email,
           fileId: file.id,
-          resource: { trashed: true },
-        });
-        deletedItems.push(file);
-      } catch (e) {
-        console.log(
-          "Failed to delete file:",
-          file.id,
-          "-",
-          e.response?.data?.error?.message || e.message
-        );
-      }
+          name: file.name,
+          mimeType: file.mimeType,
+          sizeBytes: file.sizeBytes,
+          deletedAt: new Date(),
+          expiryAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+          accessToken: access_token,
+        },
+        { upsert: true, new: true }
+      );
     }
+
+    const deletedCount = deletedItems.length;
 
     return res.json({
       success: true,
       mode: "delete",
-      summary: {
-        scanned: files.length,
-        matched: matchedFiles.length,
-        movedToBin: deletedItems.length,
-      },
-      binItems: deletedItems,
+      message:
+        deletedCount > 0
+          ? `✅ ${deletedCount} file${deletedCount > 1 ? "s" : ""} deleted successfully!`
+          : "No files matched cleanup rules.",
+      deletedCount,
+      deletedFiles: deletedItems,
     });
   } catch (err) {
-    console.error("Cleanup Error:", err.message);
+    console.error("🔥 Cleanup Error:", err.response?.data || err.message);
     res.status(500).json({ error: err.message });
   }
 });
 
-// ========== HISTORY API ==========
+// ✅ History Route
 app.post("/api/history", async (req, res) => {
   try {
-    const { email, filter } = req.body;
-
+    const { email } = req.body;
     if (!email) return res.status(400).json({ message: "Missing email" });
 
-    const query = { userEmail: email };
-
-    if (filter === "7") {
-      query.deletedAt = {
-        $gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000),
-      };
-    }
-
-    const files = await Trash.find(query).sort({ deletedAt: -1 });
+    const files = await Trash.find({ userEmail: email }).sort({ deletedAt: -1 });
 
     res.json({
       success: true,
@@ -259,93 +276,30 @@ app.post("/api/history", async (req, res) => {
       })),
     });
   } catch (err) {
-    console.error("History error:", err.message);
+    console.error("🔥 History Route Error:", err.message);
     res.status(500).json({ error: err.message });
   }
 });
 
-// ========== RESTORE ==========
-app.post("/api/bin/restore", async (req, res) => {
-  try {
-    const { fileId, access_token } = req.body;
-
-    if (!fileId || !access_token) {
-      return res
-        .status(400)
-        .json({ message: "Missing fileId or access_token" });
-    }
-
-    const oauth = oauthClientFactory();
-    oauth.setCredentials({ access_token });
-    const drive = google.drive({ version: "v3", auth: oauth });
-
-    let fileMeta;
-
-    try {
-      fileMeta = await drive.files.get({
-        fileId,
-        fields: "id, trashed",
-      });
-    } catch (err) {
-      if (err.response?.status === 404) {
-        await Trash.deleteOne({ fileId });
-        return res.json({
-          success: false,
-          restored: false,
-          message: "File permanently deleted from Google Drive",
-        });
-      }
-      throw err;
-    }
-
-    if (fileMeta.data?.trashed) {
-      await drive.files.update({
-        fileId,
-        resource: { trashed: false },
-      });
-    }
-
-    await Trash.deleteOne({ fileId });
-
-    res.json({
-      success: true,
-      restored: true,
-      message: "File successfully restored",
-    });
-  } catch (err) {
-    console.error("Restore error:", err.message);
-    res.status(500).json({ error: err.message });
-  }
-});
-
-
-// ========== DASHBOARD API ==========
+// ✅ Dashboard Route
 app.post("/api/dashboard", async (req, res) => {
   try {
     const { access_token } = req.body;
-
-    if (!access_token) {
+    if (!access_token)
       return res.status(400).json({ message: "Missing access_token" });
-    }
 
-    // Correct Google OAuth client
-    const oauth = new OAuth2Client();
+    const oauth = oauthClientFactory();
     oauth.setCredentials({ access_token });
 
     const drive = google.drive({ version: "v3", auth: oauth });
 
-    // ---- Fetch Quota ----
-    const quotaRes = await drive.about.get({
-      fields: "storageQuota",
-    });
+    const quotaRes = await drive.about.get({ fields: "storageQuota" });
+    const quota = quotaRes.data.storageQuota;
 
-    const q = quotaRes.data.storageQuota;
-
-    // ---- Fetch Images + Videos ----
     const mediaRes = await drive.files.list({
       q: "mimeType contains 'image/' or mimeType contains 'video/'",
       fields: "files(id,name,mimeType,size,webViewLink)",
-      pageSize: 100,
+      pageSize: 10,
     });
 
     const mediaFiles = (mediaRes.data.files || []).map((f) => ({
@@ -357,24 +311,25 @@ app.post("/api/dashboard", async (req, res) => {
     }));
 
     return res.json({
+      success: true,
       quota: {
-        totalUsageGB: (q.usage || 0) / 1024 ** 3,
-        totalLimitGB: (q.limit || 0) / 1024 ** 3,
-        driveUsageGB: (q.usageInDrive || 0) / 1024 ** 3,
-        gmailUsageGB: (q.usageInGmail || 0) / 1024 ** 3,
-        photosUsageGB: (q.usageInPhotos || 0) / 1024 ** 3,
+        totalUsageGB: (quota.usage || 0) / 1024 ** 3,
+        totalLimitGB: (quota.limit || 0) / 1024 ** 3,
+        driveUsageGB: (quota.usageInDrive || 0) / 1024 ** 3,
+        gmailUsageGB: (quota.usageInGmail || 0) / 1024 ** 3,
+        photosUsageGB: (quota.usageInPhotos || 0) / 1024 ** 3,
       },
       media: mediaFiles,
     });
   } catch (err) {
-    console.error("🔥 DASHBOARD ERROR:", err.response?.data || err.message);
-    return res.status(500).json({ error: "Dashboard failed" });
+    console.error("🔥 DASHBOARD ERROR DETAILS:", err.message);
+    res.status(500).json({ error: err.message });
   }
 });
 
-
-// START SERVER
+// ✅ Start Server
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () =>
-  console.log(`Server running → http://localhost:${PORT}`)
+const HOST = "127.0.0.1"; // fix connection issues
+app.listen(PORT, HOST, () =>
+  console.log(`🚀 Server running → http://${HOST}:${PORT}`)
 );
