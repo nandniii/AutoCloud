@@ -281,46 +281,58 @@ app.post("/api/history", async (req, res) => {
   }
 });
 
-// ✅ Dashboard Route
+// ✅ Dashboard Route (🔧 FIXED)
 app.post("/api/dashboard", async (req, res) => {
   try {
     const { access_token } = req.body;
     if (!access_token)
       return res.status(400).json({ message: "Missing access_token" });
 
+    console.log("🟢 Dashboard route hit");
+    console.log("🔑 Access token (first 10 chars):", access_token.slice(0, 10));
+
     const oauth = oauthClientFactory();
     oauth.setCredentials({ access_token });
 
     const drive = google.drive({ version: "v3", auth: oauth });
 
-    const quotaRes = await drive.about.get({ fields: "storageQuota" });
-    const quota = quotaRes.data.storageQuota;
+    // 🚨 Debug: catch if Google auth fails
+    try {
+      const quotaRes = await drive.about.get({ fields: "storageQuota" });
+      const quota = quotaRes.data.storageQuota;
 
-    const mediaRes = await drive.files.list({
-      q: "mimeType contains 'image/' or mimeType contains 'video/'",
-      fields: "files(id,name,mimeType,size,webViewLink)",
-      pageSize: 10,
-    });
+      const mediaRes = await drive.files.list({
+        q: "mimeType contains 'image/' or mimeType contains 'video/'",
+        fields: "files(id,name,mimeType,size,webViewLink)",
+        pageSize: 10,
+      });
 
-    const mediaFiles = (mediaRes.data.files || []).map((f) => ({
-      id: f.id,
-      name: f.name,
-      mimeType: f.mimeType,
-      sizeMB: (f.size || 0) / (1024 * 1024),
-      previewLink: f.webViewLink,
-    }));
+      const mediaFiles = (mediaRes.data.files || []).map((f) => ({
+        id: f.id,
+        name: f.name,
+        mimeType: f.mimeType,
+        sizeMB: (f.size || 0) / (1024 * 1024),
+        previewLink: f.webViewLink,
+      }));
 
-    return res.json({
-      success: true,
-      quota: {
-        totalUsageGB: (quota.usage || 0) / 1024 ** 3,
-        totalLimitGB: (quota.limit || 0) / 1024 ** 3,
-        driveUsageGB: (quota.usageInDrive || 0) / 1024 ** 3,
-        gmailUsageGB: (quota.usageInGmail || 0) / 1024 ** 3,
-        photosUsageGB: (quota.usageInPhotos || 0) / 1024 ** 3,
-      },
-      media: mediaFiles,
-    });
+      return res.json({
+        success: true,
+        quota: {
+          totalUsageGB: (quota.usage || 0) / 1024 ** 3,
+          totalLimitGB: (quota.limit || 0) / 1024 ** 3,
+          driveUsageGB: (quota.usageInDrive || 0) / 1024 ** 3,
+          gmailUsageGB: (quota.usageInGmail || 0) / 1024 ** 3,
+          photosUsageGB: (quota.usageInPhotos || 0) / 1024 ** 3,
+        },
+        media: mediaFiles,
+      });
+    } catch (googleErr) {
+      console.error("🔥 Google API Error:", googleErr.response?.data || googleErr.message);
+      return res.status(401).json({
+        success: false,
+        error: "Invalid or expired Google access token",
+      });
+    }
   } catch (err) {
     console.error("🔥 DASHBOARD ERROR DETAILS:", err.message);
     res.status(500).json({ error: err.message });
