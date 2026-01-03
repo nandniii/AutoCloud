@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import "./App.css";
-import Login from "./components/Login";
+import Login from "./components/login";
 import Dashboard from "./components/Dashboard";
 import RuleManager from "./components/RuleManager";
 import CleanupHistory from "./components/CleanupHistory";   // ⭐ ADD THIS
